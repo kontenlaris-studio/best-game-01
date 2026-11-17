@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VOIDLIGHT — one wisp against the shard swarm</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #05050f;
+    min-height: 100%;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  canvas {
+    display: block;
+    width: min(100vw, 1280px);
+    height: auto;
+    aspect-ratio: 1280 / 800;
+    background: #070714;
+    box-shadow: 0 0 64px rgba(70, 120, 255, 0.25);
+    cursor: crosshair;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="1280" height="800"></canvas>
+<noscript><p style="color:#eaf6ff">VOIDLIGHT needs JavaScript to play.</p></noscript>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
