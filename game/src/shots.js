@@ -54,6 +54,58 @@ export function pilotControl(world) {
   };
 }
 
+/**
+ * A brawler pilot for the cover's final approach: it holds the central stage
+ * and stands its ground (a much smaller dodge radius than the survival
+ * pilot's), so the swarm piles in close around the wisp instead of being
+ * kited apart — the crowd a cover frame wants.
+ */
+export function brawlerControl(world) {
+  const player = world.player;
+  let moveX = (VIEW.width / 2 - player.x) * 0.01;
+  let moveY = (VIEW.height / 2 - player.y) * 0.01;
+  const threats = [...world.enemies, ...world.orbs];
+  for (const threat of threats) {
+    const dx = player.x - threat.x;
+    const dy = player.y - threat.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < 130 * 130 && d2 > 0.01) {
+      const weight = (130 * 130 - d2) / (130 * 130);
+      const d = Math.sqrt(d2);
+      moveX += (dx / d) * weight * 1.8;
+      moveY += (dy / d) * weight * 1.8;
+    }
+  }
+  let target = null;
+  let targetD2 = Infinity;
+  for (const enemy of world.enemies) {
+    const d2 = (enemy.x - player.x) ** 2 + (enemy.y - player.y) ** 2;
+    if (d2 < targetD2) {
+      targetD2 = d2;
+      target = enemy;
+    }
+  }
+  return {
+    moveX: Math.max(-1, Math.min(1, moveX)),
+    moveY: Math.max(-1, Math.min(1, moveY)),
+    aimX: target ? target.x : player.x + 100,
+    aimY: target ? target.y : player.y,
+    firing: target !== null,
+  };
+}
+
+/**
+ * A gathering pilot for the cover's approach: the brawler's stance with its
+ * finger off the trigger. A firing pilot kills shards at range and the crowd
+ * never forms; a silent one lets the swarm converge and surround it, which
+ * is the moment the cover freezes — the shooting starts only for the
+ * final beats, once the pack is close.
+ */
+export function gatherControl(world) {
+  const control = brawlerControl(world);
+  return { ...control, firing: false };
+}
+
 /** How many shards are within `range` px of the wisp right now. */
 function crowdNearPlayer(world, range) {
   let count = 0;
@@ -78,6 +130,29 @@ function nearestEnemy(world) {
   return nearest;
 }
 
+/** The nearest living enemy that is not the brute: a burst, not a boss kill. */
+function nearestOrdinaryEnemy(world) {
+  let nearest = null;
+  let nearestD2 = Infinity;
+  for (const enemy of world.enemies) {
+    if (enemy.kind === 'brute') continue;
+    const d2 = (enemy.x - world.player.x) ** 2 + (enemy.y - world.player.y) ** 2;
+    if (d2 < nearestD2) {
+      nearestD2 = d2;
+      nearest = enemy;
+    }
+  }
+  return nearest;
+}
+
+/** Is the wisp inside the central stage box, where a portrait wants it? */
+function playerCentred(world, halfWidth, halfHeight) {
+  return (
+    Math.abs(world.player.x - VIEW.width / 2) <= halfWidth &&
+    Math.abs(world.player.y - VIEW.height / 2) <= halfHeight
+  );
+}
+
 /** A pilot who flies at the swarm and never shoots: the over scene's short story. */
 function doomedControl(world) {
   const player = world.player;
@@ -100,6 +175,22 @@ function doomedControl(world) {
   };
 }
 
+/**
+ * A pilot making its last stand: it holds the centre of the arena and never
+ * fires, so the swarm closes in from every side and the end, when it comes,
+ * happens in the middle of the frame with the pack around the wisp.
+ */
+function lastStandControl(world) {
+  const player = world.player;
+  return {
+    moveX: (VIEW.width / 2 - player.x) * 0.006,
+    moveY: (VIEW.height / 2 - player.y) * 0.006,
+    aimX: player.x + 80,
+    aimY: player.y,
+    firing: false,
+  };
+}
+
 function run(world, seconds, controlFor, stopWhen = null) {
   const steps = Math.round(seconds / STEP);
   for (let i = 0; i < steps; i += 1) {
@@ -115,29 +206,39 @@ function run(world, seconds, controlFor, stopWhen = null) {
 export function stageShot(name, world) {
   if (name === 'cover') {
     world.player.invulnerableUntil = 1e9; // the pilot survives its own photoshoot
-    // Play into a developed wave, then call the climax in through the real
-    // spawn path: a brute and an escort, given a moment to close in.
-    run(world, 60, pilotControl, (w) => w.wave >= 3);
+    // The cover poses in wave 5, the first wave with the full cast in real
+    // numbers: set the run up at its edge and let it begin for real.
+    world.wave = 4;
+    world.phase = PHASE.INTERMISSION;
+    world.phaseTimer = 0.01; // wave 5 begins on the first step
+    // The brute is called in through the real spawn path, with a head start
+    // (it is slow), while the wave's own trickle is still arriving.
     world.spawnEnemy('brute');
-    world.spawnEnemy('shard');
-    world.spawnEnemy('shard');
-    world.spawnEnemy('darter');
-    world.spawnEnemy('darter');
-    world.spawnEnemy('weaver');
-    // Wait until the crowd has genuinely closed on the wisp, then freeze on
-    // two real kills a heartbeat apart: bursts, floaters, shake and score,
-    // all by the game's own hand.
-    run(world, 7, pilotControl, (w) => crowdNearPlayer(w, 500) >= 5);
-    world.score = 12740;
-    world.combo = 13;
+    // The approach is silent: the gathering pilot holds the centre and lets
+    // the swarm surround it. Freeze once six or more shards are close.
+    run(world, 14, gatherControl, (w) => crowdNearPlayer(w, 400) >= 6 && playerCentred(w, 360, 250));
+    if (world.enemies.length < 6) {
+      // The swarm thinned anyway: call a last rush in and let it arrive.
+      world.spawnEnemy('shard');
+      world.spawnEnemy('shard');
+      world.spawnEnemy('darter');
+      run(world, 1.1, gatherControl);
+    }
+    // Only now does the wisp open fire: a third of a second of real shooting
+    // so the frame holds a live bullet stream and fresh bursts, then two
+    // staged kills a heartbeat apart for the biggest bursts of all — every
+    // burst, floater, shake and score the game's own.
+    run(world, 0.35, brawlerControl);
+    world.score = 21400;
+    world.combo = 17;
     world.player.hull = 74;
     world.player.invulnerableUntil = -1; // fully lit for its portrait
-    const first = nearestEnemy(world);
+    const first = nearestOrdinaryEnemy(world) ?? nearestEnemy(world);
     if (first) world.killEnemy(first);
-    run(world, 0.07, pilotControl);
-    const second = nearestEnemy(world);
+    run(world, 0.06, brawlerControl);
+    const second = nearestOrdinaryEnemy(world) ?? nearestEnemy(world);
     if (second) world.killEnemy(second);
-    run(world, 0.07, pilotControl);
+    run(world, 0.12, brawlerControl);
     return SCREEN.PLAY;
   }
   if (name === 'wave') {
@@ -149,7 +250,7 @@ export function stageShot(name, world) {
     world.phase = PHASE.INTERMISSION;
     world.phaseTimer = 0.01; // wave 8 begins on the first step
     run(world, 3.4, pilotControl); // the opening rush: most of the wave still alive
-    run(world, 6, pilotControl, (w) => crowdNearPlayer(w, 520) >= 5);
+    run(world, 9, pilotControl, (w) => crowdNearPlayer(w, 520) >= 5 && playerCentred(w, 300, 210));
     if (world.pickups.length === 0) world.dropPickup(world.player.x + 190, world.player.y - 130, false);
     world.player.hull = 62; // set late: the pilot may have healed on the way here
     world.player.invulnerableUntil = -1;
@@ -157,21 +258,26 @@ export function stageShot(name, world) {
     return SCREEN.PLAY;
   }
   if (name === 'over') {
-    world.wave = 5;
-    world.score = 6120;
-    world.kills = 47;
+    world.wave = 7;
+    world.score = 9100;
+    world.kills = 63;
+    // The wisp reaches wave 8 already scarred: at 26 hull the end comes early
+    // in the wave, while the swarm is still thick around it — left at full
+    // hull, the pack would spend itself crashing against the mercy windows
+    // and the last stand would end in an empty arena.
+    world.player.hull = 26;
     world.phase = PHASE.INTERMISSION;
-    world.phaseTimer = 0.01; // wave 6 begins on the first step
-    run(world, 150, doomedControl, (w) => w.over);
+    world.phaseTimer = 0.01; // wave 8 begins on the first step
+    run(world, 150, lastStandControl, (w) => w.over);
     run(world, 0.35, () => IDLE); // let the last burst hang in the air
     return SCREEN.OVER;
   }
   // title: the swarm drifts behind the name of the game
   world.player.invulnerableUntil = 1e9;
-  run(world, 6, pilotControl);
+  run(world, 6.5, pilotControl);
   // The pilot may have thinned wave 1 by now; send a fresh drift in so the
   // arena behind the title is alive.
-  while (world.enemies.length < 4) world.spawnEnemy(world.rng.chance(0.7) ? 'shard' : 'weaver');
+  while (world.enemies.length < 6) world.spawnEnemy(world.rng.chance(0.7) ? 'shard' : 'weaver');
   run(world, 1.1, pilotControl);
   return SCREEN.TITLE;
 }

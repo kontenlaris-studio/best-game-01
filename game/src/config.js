@@ -36,9 +36,9 @@ export const PICKUP = {
 };
 
 export const COLORS = {
-  void: '#070714',
-  nebulaA: '#1b1040',
-  nebulaB: '#0a2a44',
+  void: '#0a0a20',
+  nebulaA: '#2a1a5e',
+  nebulaB: '#0e3a5e',
   player: '#8ff7ff',
   playerCore: '#ffffff',
   bullet: '#ffe066',
@@ -49,7 +49,7 @@ export const COLORS = {
   pickupHeal: '#5dff9d',
   pickupRapid: '#ffd75d',
   pickupShield: '#5db9ff',
-  text: '#eaf6ff',
-  textDim: '#8fa3c8',
+  text: '#f2f9ff',
+  textDim: '#a9bde0',
   danger: '#ff5d6c',
 };
